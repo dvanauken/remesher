@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>verify</title>
+    <link rel="stylesheet" href="../index.css">
+</head>
+<body>
+    <header>
+        <h1>remesher-I</h1>
+        <label>Shape <select id="shape"></select></label>
+        <label>Quad size <input id="spacing" type="range" min="8" max="40" step="1" value="18"><output>18</output></label>
+        <label>Guide influence <input id="influence" type="range" min="15" max="120" step="1" value="55"><output>55</output></label>
+        <label><input id="show-quads" type="checkbox"> Quads</label>
+        <label><input id="show-field" type="checkbox"> Field</label>
+        <label><input id="show-tris" type="checkbox"> Triangles</label>
+        <label><input id="show-sings" type="checkbox"> Irregular</label>
+        <label><input id="show-guides" type="checkbox"> Guides</label>
+        <button id="clear-guides">Clear guides</button>
+    </header>
+    <main>
+        <canvas></canvas>
+    </main>
+    <footer>
+        <output id="status"></output>
+        <small>verification harness — serve repo root, open /test/verify.html</small>
+    </footer>
+    <script type="module">
+        import { App } from '../src/view/App.js';
+        import { GuideCurve } from '../src/model/GuideCurve.js';
+        const app = new App(document.body);
+        setTimeout(() => {
+            app.addGuide(new GuideCurve([[-180, 60], [-60, 120], [80, 90], [190, 10]]));
+            app.addGuide(new GuideCurve([[-40, -190], [10, -60], [-30, 80]]));
+            document.title = 'verify-done';
+        }, 300);
+    </script>
+</body>
+</html>

@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>remesher-I — guided cross-field remesh</title>
+    <link rel="stylesheet" href="index.css">
+</head>
+<body>
+    <header>
+        <h1>remesher-I</h1>
+        <label>Shape <select id="shape"></select></label>
+        <label>Quad size <input id="spacing" type="range" min="8" max="40" step="1" value="18"><output>18</output></label>
+        <label>Guide influence <input id="influence" type="range" min="15" max="120" step="1" value="55"><output>55</output></label>
+        <label><input id="show-quads" type="checkbox"> Quads</label>
+        <label><input id="show-field" type="checkbox"> Field</label>
+        <label><input id="show-tris" type="checkbox"> Triangles</label>
+        <label><input id="show-sings" type="checkbox"> Irregular</label>
+        <label><input id="show-guides" type="checkbox"> Guides</label>
+        <button id="clear-guides">Clear guides</button>
+    </header>
+    <main>
+        <canvas></canvas>
+    </main>
+    <footer>
+        <output id="status"></output>
+        <small>drag: draw guide &middot; right-click: delete guide &middot; wheel: zoom &middot; middle/space-drag: pan &middot; Esc: cancel stroke</small>
+    </footer>
+    <script type="module" src="index.js"></script>
+</body>
+</html>

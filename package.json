@@ -1,0 +1,11 @@
+{
+    "name": "remesher-i",
+    "version": "0.1.0",
+    "description": "Guided cross-field quad remeshing demo (2D)",
+    "type": "module",
+    "private": true,
+    "scripts": {
+        "test": "node test/pipeline.test.js",
+        "start": "npx http-server -p 8080 -c-1 ."
+    }
+}
