@@ -29,14 +29,41 @@ The pipeline is the standard field-guided remeshing stack:
    constraints; Gauss-Seidel smoothing propagates their influence across the
    domain. This is the guideline feature: a guide pins the field to its tangent
    nearby, and smoothing carries that orientation outward.
-3. **Combing** — BFS picks a consistent branch of the 4-fold field. Interior
-   vertices where the branch matchings don't cancel are the field's
-   singularities: the extraordinary (non-valence-4) vertices of the final quad
-   mesh, shown as dots.
-4. **Parameterization** — two least-squares Poisson solves (FEM stiffness
-   matrix + Jacobi-preconditioned CG) fit scalars `u`, `v` whose gradients
-   follow the field, scaled so one integer step = one quad edge.
-5. **IsoContours** — integer iso-lines of `u` and `v` are the quad layout.
+3. **Combing + cut graph + FieldTopology** — interior vertices where the
+   branch matchings don't cancel are the field's singularities: the
+   extraordinary (non-valence-4) vertices of the final quad mesh, shown as
+   dots. A cut graph routes shortest paths from each singularity to the
+   boundary, and BFS combing picks a consistent branch of the 4-fold field
+   without crossing them — so all seams land on those short, deliberate paths
+   (purple in the Seams layer) instead of wherever traversal order left them.
+   `FieldTopology` stores the per-edge quarter-turn matchings and seam edges
+   as explicit objects. Boundary vertices carry quarter-turn charges too —
+   L-plate corners, or a singularity pushed onto the rim — shown as hollow
+   dots; interior plus boundary indices always total the disk's -4.
+4. **SeamlessParameterization (MIQ-lite)** — the mesh is cut along the seam
+   graph (vertices split into one DOF per wedge), and `u`, `v` are fit together
+   by a least-squares Poisson solve (FEM stiffness + Jacobi-preconditioned CG)
+   under soft grid-automorphism transition constraints across each seam:
+   `p_B = R90^s p_A + T`. The per-seam-curve translations `T` are then rounded
+   to integers CoMISo-style and re-imposed, so integer grid lines continue
+   coherently across seams — no herringbone. The rounding residual is
+   measured and shown, not assumed away. (`Parameterization` keeps the plain
+   single-chart solve for comparison.)
+5. **IsoContours** — integer iso-lines of `u` and `v` remain available as a
+   debug view of the layout.
+6. **QuadMesh** — integer grid vertices are inverted through the piecewise
+   linear parameterization (per corner, per chart). Near seams the map is
+   multivalued — one integer label can name several physical grid points — so
+   each world-position branch becomes its own vertex, and cells assemble
+   around each physical cell center, picking the branch nearest it. Cells
+   straddling a seam resolve far-side corners through the integer transitions,
+   stitching the mesh across seams. Stitched and multi-branch cells are
+   admitted only while every edge stays manifold and consistently oriented;
+   everything skipped is counted and drawable.
+7. **FieldDiagnostics** — per-triangle curl residual (pre-solve: is the target
+   field locally integrable?) and parameterization drift (post-solve: where
+   did the Poisson fit compromise?). Both surface as a heatmap overlay and in
+   the status bar; high drift predicts exactly where extraction loses cells.
 
 Full field + parameterization recompute is ~50 ms for ~3k triangles, so guides
 apply interactively.
@@ -52,7 +79,9 @@ apply interactively.
 | Esc | Cancel in-progress stroke |
 
 Toolbar: shape (blob / disc / L-plate), quad size, guide influence radius, and
-layer toggles (quads, field glyphs, triangulation, irregular vertices, guides).
+layer toggles (quads, field glyphs, triangulation, irregular vertices, guides,
+skipped extraction cells, extracted mesh valences, combing seams, drift
+heatmap).
 
 ## Code map
 
@@ -61,9 +90,13 @@ src/model/   pure math, no DOM
   Delaunay.js           Bowyer-Watson triangulation
   DomainMesh.js         boundary resampling, interior seeding, adjacency
   CrossField.js         4-RoSy solve, combing, singularity detection
-  Parameterization.js   FEM Poisson solves (CG)
+  Parameterization.js   plain single-chart FEM Poisson solves (CG)
+  SeamlessParameterization.js  MIQ-lite: seam cut, transition constraints, integer rounding
   IsoContours.js        marching triangles at integer levels
-  GuideCurve.js         stroke simplification, distance/tangent queries
+  QuadMesh.js           conservative quad extraction + validation
+  FieldTopology.js      per-edge branch matchings, seam graph, matching-cycle indices
+  FieldDiagnostics.js   curl residual + parameterization drift heatmaps
+  GuideCurve.js         stroke simplification, smoothing, distance/tangent queries
   Shapes.js             demo boundary polygons
 src/view/
   App.js                composition root, pipeline state, UI bindings
@@ -80,11 +113,17 @@ test/
 
 - 2D only. On a 3D surface the same pipeline works per-face with local frames;
   field smoothing then needs parallel transport between neighboring faces.
-- The parameterization is a plain least-squares fit; production quality is
-  Mixed-Integer Quadrangulation (seam cuts + integer jumps at singularities).
-  Here contours fan/compress near singularities instead of terminating cleanly.
-- Contours visualize the quad layout; extracting a watertight quad `Mesh`
-  data structure (integer grid vertices + connectivity) is the next step.
+- The seam transitions use greedy per-curve rounding, not an exact
+  mixed-integer solve; where several seam curves meet at a singularity the
+  roundings can conflict, and the residual is reported rather than repaired.
+  Singularity UV positions are not snapped to transition fixed points.
+- Extraction is conservative cell inversion with branch disambiguation and
+  transition stitching, not QEx-style integer-line tracing: cells that are
+  geometrically implausible or would break manifoldness are skipped (and
+  drawable via the Skipped layer), so coverage still dips right at
+  singularities and the boundary.
+- Boundary coverage is intentionally incomplete: only grid cells whose corners
+  and center can be safely inverted are emitted.
 
 References: Jakob et al., *Instant Field-Aligned Meshes* (2015); Bommes et al.,
 *Mixed-Integer Quadrangulation* (2009); Vaxman et al., *Directional Field

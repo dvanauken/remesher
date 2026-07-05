@@ -72,9 +72,16 @@ export class CrossField {
         return theta;
     }
 
-    /** Pick a globally consistent branch of the 4-fold field via BFS (combing). */
-    comb(theta) {
-        const { triNb } = this.mesh;
+    /**
+     * Pick a globally consistent branch of the 4-fold field via BFS (combing).
+     * With `cuts` (a set of primal edge keys from cutGraph), the BFS never
+     * crosses a cut edge, so all residual branch jumps — the seams — land on
+     * the cut graph instead of wherever the traversal happened to leave them.
+     * @param {Float64Array} theta
+     * @param {Set<string>|null} cuts
+     */
+    comb(theta, cuts = null) {
+        const { tris, triNb } = this.mesh;
         const nt = theta.length;
         const HALF_PI = Math.PI / 2;
         const alpha = new Float64Array(nt);
@@ -86,8 +93,13 @@ export class CrossField {
             const queue = [seed];
             for (let head = 0; head < queue.length; head++) {
                 const t = queue[head];
-                for (const nb of triNb[t]) {
+                for (let e = 0; e < 3; e++) {
+                    const nb = triNb[t][e];
                     if (nb < 0 || seen[nb]) continue;
+                    if (cuts) {
+                        const a = tris[t][(e + 1) % 3], b = tris[t][(e + 2) % 3];
+                        if (cuts.has(a < b ? a + '_' + b : b + '_' + a)) continue;
+                    }
                     const k = Math.round((alpha[t] - theta[nb]) / HALF_PI);
                     alpha[nb] = theta[nb] + k * HALF_PI;
                     seen[nb] = 1;
@@ -99,10 +111,51 @@ export class CrossField {
     }
 
     /**
+     * Cut graph: shortest primal-edge paths from every singular vertex to the
+     * boundary (multi-source BFS from the boundary). Combing against these cuts
+     * concentrates all seams on short, deliberate paths.
+     * @param {{vertex: number}[]} singularities
+     * @returns {Set<string>} primal edge keys 'a_b' (a < b)
+     */
+    cutGraph(singularities) {
+        const { verts, edges, boundaryVert } = this.mesh;
+        const adj = verts.map(() => []);
+        for (const [a, b] of edges) {
+            adj[a].push(b);
+            adj[b].push(a);
+        }
+        const parent = new Int32Array(verts.length).fill(-2);
+        const queue = [];
+        for (let v = 0; v < verts.length; v++) {
+            if (boundaryVert[v]) {
+                parent[v] = -1;
+                queue.push(v);
+            }
+        }
+        for (let head = 0; head < queue.length; head++) {
+            for (const nb of adj[queue[head]]) {
+                if (parent[nb] !== -2) continue;
+                parent[nb] = queue[head];
+                queue.push(nb);
+            }
+        }
+        const cuts = new Set();
+        for (const s of singularities) {
+            let v = s.vertex;
+            while (v >= 0 && parent[v] >= 0) {
+                const p = parent[v];
+                cuts.add(v < p ? v + '_' + p : p + '_' + v);
+                v = p;
+            }
+        }
+        return cuts;
+    }
+
+    /**
      * Irregular vertices of the field: interior vertices where branch matchings
      * around the one-ring do not cancel. These become the extraordinary (non-valence-4)
      * vertices of the quad mesh.
-     * @returns {{x:number, y:number, index:number}[]}
+     * @returns {{x:number, y:number, vertex:number, index:number}[]}
      */
     singularities(theta) {
         const { verts, boundaryVert } = this.mesh;
@@ -118,7 +171,55 @@ export class CrossField {
                 const b = theta[fan[(i + 1) % fan.length]];
                 sum += Math.round((a - b) / HALF_PI);
             }
-            if (sum !== 0) out.push({ x: verts[v][0], y: verts[v][1], index: sum });
+            if (sum !== 0) out.push({ x: verts[v][0], y: verts[v][1], vertex: v, index: sum });
+        }
+        return out;
+    }
+
+    /**
+     * Boundary singularities: boundary vertices where the field's turn across
+     * the open fan disagrees with the boundary tangent's turn by a quarter
+     * multiple. Interior detection is blind to these — a singularity pushed
+     * onto the boundary (or an L-plate corner charge) only shows up here.
+     * The interior indices plus these must sum to the disk's total of -4.
+     * @returns {{x:number, y:number, vertex:number, index:number}[]}
+     */
+    boundarySingularities(theta) {
+        const { tris, triNb, verts, vertTris, boundaryVert } = this.mesh;
+        const HALF_PI = Math.PI / 2;
+        const out = [];
+        for (let v = 0; v < verts.length; v++) {
+            if (!boundaryVert[v]) continue;
+            // start at the corner whose backward edge is the open boundary
+            let start = null;
+            for (const [ti, l] of vertTris[v]) {
+                if (triNb[ti][(l + 1) % 3] < 0) {
+                    start = [ti, l];
+                    break;
+                }
+            }
+            if (!start) continue;
+            let [t, l] = start;
+            const wStart = tris[t][(l + 2) % 3];
+            const a0 = theta[t];
+            let a = a0;
+            let ok = true;
+            for (let guard = 0; triNb[t][(l + 2) % 3] >= 0; guard++) {
+                t = triNb[t][(l + 2) % 3];
+                l = tris[t].indexOf(v);
+                if (l < 0 || guard > 64) {
+                    ok = false;
+                    break;
+                }
+                a = theta[t] + Math.round((a - theta[t]) / HALF_PI) * HALF_PI;
+            }
+            if (!ok) continue;
+            const wEnd = tris[t][(l + 1) % 3];
+            const tin = Math.atan2(verts[v][1] - verts[wStart][1], verts[v][0] - verts[wStart][0]);
+            const tout = Math.atan2(verts[wEnd][1] - verts[v][1], verts[wEnd][0] - verts[v][0]);
+            const tau = Math.atan2(Math.sin(tout - tin), Math.cos(tout - tin));
+            const index = Math.round(((a - a0) - tau) / HALF_PI);
+            if (index !== 0) out.push({ x: verts[v][0], y: verts[v][1], vertex: v, index });
         }
         return out;
     }

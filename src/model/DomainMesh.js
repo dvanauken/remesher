@@ -97,7 +97,7 @@ export class DomainMesh {
                     out.push([ax + (bx - ax) * s / k, ay + (by - ay) * s / k]);
                 }
             }
-            return out;
+            return DomainMesh.#jitter(out, h);
         }
         let perimeter = 0;
         for (let i = 0; i < ring.length; i++) {
@@ -117,7 +117,20 @@ export class DomainMesh {
             }
             acc += len;
         }
-        return out;
+        return DomainMesh.#jitter(out, h);
+    }
+
+    /**
+     * Symbolic perturbation: exactly cocircular boundary samples (a perfect
+     * circle) make Bowyer-Watson's in-circle test inconsistent and the
+     * triangulation degenerates. A deterministic sub-micron nudge breaks the
+     * degeneracy without measurably moving the boundary.
+     */
+    static #jitter(pts, h) {
+        return pts.map(([x, y], i) => [
+            x + (DomainMesh.#hash(i, 13) - 0.5) * 1e-4 * h,
+            y + (DomainMesh.#hash(i, 29) - 0.5) * 1e-4 * h,
+        ]);
     }
 
     static #seedInterior(ring, boundary, pts, h) {

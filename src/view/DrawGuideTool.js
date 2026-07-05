@@ -28,7 +28,7 @@ export class DrawGuideTool {
         if (!this.stroke) return;
         const guide = GuideCurve.fromStroke(this.stroke, this.app.viewport.px(2));
         this.stroke = null;
-        if (guide.length > this.app.mesh.h * 2) this.app.addGuide(guide);
+        if (guide.length > this.app.state.mesh.h * 2) this.app.addGuide(guide);
         else this.app.invalidate();
     }
 

@@ -4,6 +4,7 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>remesher-I — guided cross-field remesh</title>
+    <link rel="icon" href="data:,">
     <link rel="stylesheet" href="index.css">
 </head>
 <body>
@@ -17,13 +18,20 @@
         <label><input id="show-tris" type="checkbox"> Triangles</label>
         <label><input id="show-sings" type="checkbox"> Irregular</label>
         <label><input id="show-guides" type="checkbox"> Guides</label>
+        <label><input id="show-skipped" type="checkbox"> Skipped</label>
+        <label><input id="show-valence" type="checkbox"> Valence</label>
+        <label><input id="show-seams" type="checkbox"> Seams</label>
+        <label><input id="show-drift" type="checkbox"> Drift</label>
         <button id="clear-guides">Clear guides</button>
     </header>
     <main>
         <canvas></canvas>
     </main>
     <footer>
-        <output id="status"></output>
+        <div>
+            <output id="status"></output>
+            <output id="diagnostics"></output>
+        </div>
         <small>drag: draw guide &middot; right-click: delete guide &middot; wheel: zoom &middot; middle/space-drag: pan &middot; Esc: cancel stroke</small>
     </footer>
     <script type="module" src="index.js"></script>

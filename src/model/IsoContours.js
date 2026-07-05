@@ -2,14 +2,17 @@
 export class IsoContours {
     /**
      * @param {DomainMesh} mesh
-     * @param {Float64Array} f  per-vertex scalar
+     * @param {Float64Array} f  per-vertex scalar, or per-corner (length 3*tris) with corner=true
+     * @param {boolean} [corner]
      * @returns {number[][]} segments [x1, y1, x2, y2]
      */
-    static extract(mesh, f) {
+    static extract(mesh, f, corner = false) {
         const { verts, tris } = mesh;
         const segs = [];
-        for (const t of tris) {
-            const fa = f[t[0]], fb = f[t[1]], fc = f[t[2]];
+        for (let ti = 0; ti < tris.length; ti++) {
+            const t = tris[ti];
+            const fv = corner ? [f[ti * 3], f[ti * 3 + 1], f[ti * 3 + 2]] : [f[t[0]], f[t[1]], f[t[2]]];
+            const [fa, fb, fc] = fv;
             const lo = Math.ceil(Math.min(fa, fb, fc));
             const hi = Math.floor(Math.max(fa, fb, fc));
             if (hi - lo > 200) continue; // degenerate solve guard
@@ -18,7 +21,7 @@ export class IsoContours {
                 const hits = [];
                 for (let e = 0; e < 3; e++) {
                     const i = t[e], j = t[(e + 1) % 3];
-                    const fi = f[i] - lvl, fj = f[j] - lvl;
+                    const fi = fv[e] - lvl, fj = fv[(e + 1) % 3] - lvl;
                     if ((fi > 0) !== (fj > 0)) {
                         const s = fi / (fi - fj);
                         hits.push([

@@ -92,6 +92,17 @@ footer {
     color: #666;
 }
 
+footer > div {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    min-width: 0;
+}
+
 output {
     font: inherit;
+}
+
+#diagnostics {
+    color: #8a4b15;
 }
