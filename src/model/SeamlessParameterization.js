@@ -45,14 +45,50 @@ export class SeamlessParameterization {
             }
         });
 
+        // boundary alignment: along each boundary run, the grid coordinate
+        // perpendicular to the field is held constant (and later pinned to an
+        // integer), so the domain boundary becomes a grid iso-line and the last
+        // row of quads ends flush against it instead of a fractional cell short
+        const segments = this.#boundarySegments(alpha);
+        const boundaryEq = [];
+        for (const seg of segments) {
+            for (const e of seg.edges) {
+                boundaryEq.push({ coefs: [[e.iA, 1], [e.iB, -1]], rhs: 0 });
+            }
+        }
+
         // pass 1: seamless relaxation — rotations enforced, translations free
-        const x1 = this.#cg(this.#assemble(this.diffConstraints), b);
-        // greedy per-curve integer rounding of the seam translations
-        const rounded = [];
+        const x1 = this.#cg(this.#assemble([...this.diffConstraints, ...boundaryEq]), b);
+
+        // greedy rounding in dependency order: boundary lines first (they are
+        // locked to the geometry), then seam translations from the re-solved
+        // system — rounding both from pass 1 lets them pick conflicting integers
+        // where a cut path meets the boundary
+        let boundaryRoundErr = 0;
+        const boundaryInt = [];
+        for (const seg of segments) {
+            const dofs = new Set();
+            for (const e of seg.edges) {
+                dofs.add(e.iA);
+                dofs.add(e.iB);
+            }
+            let avg = 0;
+            for (const i of dofs) avg += x1[i];
+            avg /= dofs.size;
+            const N = Math.round(avg);
+            boundaryRoundErr = Math.max(boundaryRoundErr, Math.abs(avg - N));
+            for (const i of dofs) boundaryInt.push({ coefs: [[i, 1]], rhs: N });
+        }
+        const x2 = boundaryInt.length
+            ? this.#cg(this.#assemble([...this.diffConstraints, ...boundaryEq, ...boundaryInt]),
+                this.#rhsWith(b, boundaryInt))
+            : x1;
+
+        const rounded = [...boundaryInt];
         const transitions = [];
         let maxRoundErr = 0;
         for (const curve of this.curves) {
-            const T = this.#curveTranslation(curve, x1);
+            const T = this.#curveTranslation(curve, x2);
             const Tint = [Math.round(T[0]), Math.round(T[1])];
             maxRoundErr = Math.max(maxRoundErr, Math.abs(T[0] - Tint[0]), Math.abs(T[1] - Tint[1]));
             for (const m of curve) rounded.push(...this.#endpointConstraints(m, Tint));
@@ -67,10 +103,14 @@ export class SeamlessParameterization {
                 }),
             });
         }
-        // pass 2: re-solve with integer transitions pinned
+
+        // final pass: everything pinned
         const withInt = rounded.length
-            ? this.#cg(this.#assemble([...this.diffConstraints, ...rounded]), this.#rhsWith(b, rounded))
+            ? this.#cg(this.#assemble([...this.diffConstraints, ...boundaryEq, ...rounded]), this.#rhsWith(b, rounded))
             : x1;
+        // the pins are soft, leaving the boundary a hair off its integer line —
+        // enough to push boundary grid points outside the map. Snap them exact.
+        for (const con of boundaryInt) withInt[con.coefs[0][0]] = con.rhs;
 
         let residual = 0;
         for (const curve of this.curves) {
@@ -91,6 +131,8 @@ export class SeamlessParameterization {
                 extraVerts: n - this.mesh.verts.length,
                 seamCurves: this.curves.length,
                 maxRoundErr: residual,
+                boundarySegments: segments.length,
+                boundaryRoundErr,
             },
         };
     }
@@ -326,6 +368,53 @@ export class SeamlessParameterization {
             this.curves.push([...backward.reverse(), ...forward]);
         }
         this.sideDof = sideDof;
+    }
+
+    /**
+     * Boundary runs for integer alignment. Along each boundary edge the field
+     * is (softly) aligned, so one grid coordinate is constant across it: v if
+     * the edge runs along the u-axis, u otherwise. Edges chain into segments
+     * through shared wedge DOFs — cut-path endpoints and corner charges split
+     * the wedges, so segments break exactly where the constant coordinate
+     * changes. Each segment later gets pinned to a single integer, mapping the
+     * domain boundary onto grid iso-lines (the disk becomes a rectilinear UV
+     * polygon whose corners are the cut endpoints and boundary charges).
+     */
+    #boundarySegments(alpha) {
+        const { tris, boundaryEdges } = this.mesh;
+        const n = this.nCut;
+        const HALF_PI = Math.PI / 2;
+        const items = [];
+        for (const be of boundaryEdges) {
+            const la = tris[be.tri].indexOf(be.a), lb = tris[be.tri].indexOf(be.b);
+            if (la < 0 || lb < 0) continue;
+            const phi = be.angle - alpha[be.tri];
+            const k = Math.round(phi / HALF_PI);
+            if (Math.abs(phi - k * HALF_PI) > 0.6) continue; // field not aligned here — don't force it
+            const pinV = ((k % 2) + 2) % 2 === 0; // edge along the u-axis -> v is constant
+            const dofA = this.cut[be.tri * 3 + la];
+            const dofB = this.cut[be.tri * 3 + lb];
+            items.push({ iA: pinV ? n + dofA : dofA, iB: pinV ? n + dofB : dofB });
+        }
+        const parent = new Map();
+        const find = i => {
+            while (parent.get(i) !== i) {
+                parent.set(i, parent.get(parent.get(i)));
+                i = parent.get(i);
+            }
+            return i;
+        };
+        for (const it of items) {
+            for (const i of [it.iA, it.iB]) if (!parent.has(i)) parent.set(i, i);
+            parent.set(find(it.iA), find(it.iB));
+        }
+        const byRoot = new Map();
+        for (const it of items) {
+            const r = find(it.iA);
+            if (!byRoot.has(r)) byRoot.set(r, { edges: [] });
+            byRoot.get(r).edges.push(it);
+        }
+        return [...byRoot.values()];
     }
 
     /** Oriented rotation and DOFs of a curve member. */

@@ -293,16 +293,19 @@ for (const tr of seamSol.transitions) {
 const seamDrift = FieldDiagnostics.summarize(blob,
     FieldDiagnostics.drift(blob, seamless.grads, blobAlpha, 18, seamSol.uc, seamSol.vc, true));
 console.log(`seamless drift ${seamDrift.mean.toFixed(3)}/${seamDrift.max.toFixed(2)} vs shared-vertex ${blobDriftG.mean.toFixed(3)}/${blobDriftG.max.toFixed(2)}`);
-assert.ok(seamDrift.mean < blobDriftG.mean, 'seamless solve reduces guided drift');
-assert.ok(seamDrift.mean < 0.45, `seamless guided drift stays low (${seamDrift.mean.toFixed(3)})`);
+// boundary conformity costs some drift vs the unconstrained plain solve — it
+// must stay bounded, and it buys near-total coverage below
+assert.ok(seamDrift.mean < 0.6, `seamless guided drift stays bounded (${seamDrift.mean.toFixed(3)})`);
+assert.ok(seamSol.stats.boundarySegments > 0, 'boundary is partitioned into alignment segments');
+assert.ok(seamSol.stats.boundaryRoundErr < 0.5, 'boundary lines round to integers');
 const seamQuad = QuadMesh.extract(blob, seamSol.uc, seamSol.vc,
     { corner: true, chart: seamSol.chart, transitions: seamSol.transitions });
 console.log(`seamless extraction: ${seamQuad.quads.length} quads (shared-vertex: ${blobQuad.quads.length}), `
     + `${seamQuad.stats.stitchedCells} stitched, ${(seamQuad.stats.coverage * 100).toFixed(1)}% cover`);
 assert.ok(seamQuad.validation.isValid, `seamless quad mesh valid: ${seamQuad.validation.issues.join('; ')}`);
-assert.ok(seamQuad.quads.length > 100, 'seamless extraction produces a substantial mesh');
+assert.ok(seamQuad.quads.length > blobQuad.quads.length, 'boundary-conforming extraction beats the shared-vertex mesh');
 assert.ok(seamQuad.stats.stitchedCells > 0, 'cells are stitched across seams');
-assert.ok(seamQuad.stats.coverage > 0.7, `seamless coverage holds up (${(seamQuad.stats.coverage * 100).toFixed(1)}%)`);
+assert.ok(seamQuad.stats.coverage > 0.9, `boundary-conforming coverage (${(seamQuad.stats.coverage * 100).toFixed(1)}%)`);
 assertSkipAccounting(seamQuad);
 assertValenceDetails(seamQuad);
 assertSkipAccounting(blobQuad);
@@ -320,18 +323,23 @@ const solP = paramP.solve(alphaP, 18);
 const isoP = IsoContours.extract(plate, solP.u);
 assert.ok(isoP.length > 50 && isoP.every(s => s.every(Number.isFinite)), 'L-plate pipeline ok');
 
-// with no seams, the seamless solve degenerates to the plain one
+// with no seams there are no cut DOFs, and boundary alignment maps the
+// rectilinear plate onto grid lines almost perfectly
 const plateTopo = new FieldTopology(plate, thetaP, alphaP);
 if (plateTopo.seams.length === 0) {
     const seamlessP = new SeamlessParameterization(plate, plateTopo);
     const solSP = seamlessP.solve(alphaP, 18);
     assert.equal(solSP.stats.extraVerts, 0, 'no seams -> no cut vertices');
-    const dPlain = FieldDiagnostics.summarize(plate,
-        FieldDiagnostics.drift(plate, paramP.grads, alphaP, 18, solP.u, solP.v));
+    assert.ok(solSP.stats.boundarySegments >= 4, 'plate boundary splits into per-side alignment segments');
     const dSeam = FieldDiagnostics.summarize(plate,
         FieldDiagnostics.drift(plate, seamlessP.grads, alphaP, 18, solSP.uc, solSP.vc, true));
-    assert.ok(Math.abs(dPlain.mean - dSeam.mean) < 1e-3,
-        `seam-free seamless solve matches plain (${dPlain.mean.toFixed(4)} vs ${dSeam.mean.toFixed(4)})`);
+    assert.ok(dSeam.mean < 0.3, `plate conformity cost stays small (drift ${dSeam.mean.toFixed(3)})`);
+    const plateQuad = QuadMesh.extract(plate, solSP.uc, solSP.vc,
+        { corner: true, chart: solSP.chart, transitions: solSP.transitions });
+    assert.ok(plateQuad.validation.isValid, `plate quad mesh valid: ${plateQuad.validation.issues.join('; ')}`);
+    assert.ok(plateQuad.stats.coverage > 0.95,
+        `plate meshes to its boundary (${(plateQuad.stats.coverage * 100).toFixed(1)}%)`);
+    assertSkipAccounting(plateQuad);
 }
 console.log('L-plate ok');
 

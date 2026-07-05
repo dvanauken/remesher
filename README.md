@@ -44,11 +44,15 @@ The pipeline is the standard field-guided remeshing stack:
    graph (vertices split into one DOF per wedge), and `u`, `v` are fit together
    by a least-squares Poisson solve (FEM stiffness + Jacobi-preconditioned CG)
    under soft grid-automorphism transition constraints across each seam:
-   `p_B = R90^s p_A + T`. The per-seam-curve translations `T` are then rounded
-   to integers CoMISo-style and re-imposed, so integer grid lines continue
-   coherently across seams — no herringbone. The rounding residual is
-   measured and shown, not assumed away. (`Parameterization` keeps the plain
-   single-chart solve for comparison.)
+   `p_B = R90^s p_A + T`. Along each boundary run, the grid coordinate
+   perpendicular to the field is held constant. Boundary lines and
+   per-seam-curve translations `T` are then rounded to integers CoMISo-style
+   (boundary first, then seams) and re-imposed — so integer grid lines
+   continue coherently across seams and the domain boundary itself becomes a
+   grid iso-line: the disk maps to a rectilinear UV polygon whose corners are
+   the cut endpoints and boundary charges, and the mesh runs flush to the
+   outline. Rounding residuals are measured and shown, not assumed away.
+   (`Parameterization` keeps the plain single-chart solve for comparison.)
 5. **IsoContours** — integer iso-lines of `u` and `v` remain available as a
    debug view of the layout.
 6. **QuadMesh** — integer grid vertices are inverted through the piecewise
@@ -120,10 +124,12 @@ test/
 - Extraction is conservative cell inversion with branch disambiguation and
   transition stitching, not QEx-style integer-line tracing: cells that are
   geometrically implausible or would break manifoldness are skipped (and
-  drawable via the Skipped layer), so coverage still dips right at
-  singularities and the boundary.
-- Boundary coverage is intentionally incomplete: only grid cells whose corners
-  and center can be safely inverted are emitted.
+  drawable via the Skipped layer). Coverage runs 97-100%; what remains are
+  small notches right at singularity tips, whose UV positions are not yet
+  snapped to transition fixed points.
+- Boundary conformity relies on the field aligning with the boundary; where a
+  strong guide overpowers that alignment, the affected boundary run is left
+  unconstrained rather than forced.
 
 References: Jakob et al., *Instant Field-Aligned Meshes* (2015); Bommes et al.,
 *Mixed-Integer Quadrangulation* (2009); Vaxman et al., *Directional Field

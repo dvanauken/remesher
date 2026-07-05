@@ -355,7 +355,9 @@ export class QuadMesh {
      */
     static #locateClusters(mesh, cu, cv, U, V, triList, posTol) {
         const hits = [];
-        const eps = 1e-9;
+        // loose enough to catch grid points pinned onto the boundary iso-line
+        // (solver residual ~1e-3); clamped barycentrics land them on the edge
+        const eps = 2e-3;
         for (const ti of triList) {
             const t = mesh.tris[ti];
             const u0 = cu(ti, 0), v0 = cv(ti, 0);
